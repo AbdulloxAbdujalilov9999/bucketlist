@@ -373,9 +373,23 @@
 
 <div class="toast" id="toast" hidden></div>
 
-<script>
+<script type="module">
+import { initializeApp } from "https://www.gstatic.com/firebasejs/12.19.0/firebase-app.js";
+import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/12.19.0/firebase-auth.js";
+import { getDatabase, ref, onValue, push, update, remove } from "https://www.gstatic.com/firebasejs/12.19.0/firebase-database.js";
+
 (function () {
   'use strict';
+
+  var firebaseConfig = {
+    apiKey: "AIzaSyC-qU_jRGTfAn1iMZep82VkMb5viCM_Thc",
+    authDomain: "life-list-bucketlist.firebaseapp.com",
+    databaseURL: "https://life-list-bucketlist-default-rtdb.asia-southeast1.firebasedatabase.app",
+    projectId: "life-list-bucketlist",
+    storageBucket: "life-list-bucketlist.firebasestorage.app",
+    messagingSenderId: "1063180455804",
+    appId: "1:1063180455804:web:3eb53aaffa462f465f9ef9"
+  };
 
   var CHECK_SVG = '<svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/></svg>';
   var DELETE_SVG = '<svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg>';
@@ -398,7 +412,8 @@
   var editMode = false;
   var search = '';
   var mode = null;
-  var dbCol = null;
+  var firebaseDb = null;
+  var wishesRef = null;
   var toastTimer = null;
 
   function el(tag, cls, text) {
@@ -451,8 +466,8 @@
   function addWish(rawText) {
     var text = rawText.trim();
     if (!text) return;
-    if (mode === 'db') {
-      dbCol.add({ text: text, done: false, createdAt: Date.now(), doneAt: null })
+    if (mode === 'firebase') {
+      push(wishesRef, { text: text, done: false, createdAt: Date.now(), doneAt: null })
         .catch(function () { showMessage('Could not add that wish — try again'); });
     } else {
       items.unshift({ id: genId(), text: text, done: false, createdAt: Date.now(), doneAt: null });
@@ -463,8 +478,8 @@
 
   function toggleDone(item) {
     var done = !item.done;
-    if (mode === 'db') {
-      dbCol.doc(item.id).update({ done: done, doneAt: done ? Date.now() : null })
+    if (mode === 'firebase') {
+      update(ref(firebaseDb, 'wishes/' + item.id), { done: done, doneAt: done ? Date.now() : null })
         .catch(function () { showMessage('Could not update — try again'); });
     } else {
       item.done = done;
@@ -475,8 +490,8 @@
   }
 
   function deleteWish(item) {
-    if (mode === 'db') {
-      dbCol.doc(item.id).delete()
+    if (mode === 'firebase') {
+      remove(ref(firebaseDb, 'wishes/' + item.id))
         .then(function () { showUndoToast(item); })
         .catch(function () { showMessage('Could not delete — try again'); });
     } else {
@@ -488,8 +503,8 @@
   }
 
   function restoreWish(item) {
-    if (mode === 'db') {
-      dbCol.add({ text: item.text, done: item.done, createdAt: item.createdAt || Date.now(), doneAt: item.doneAt || null })
+    if (mode === 'firebase') {
+      push(wishesRef, { text: item.text, done: item.done, createdAt: item.createdAt || Date.now(), doneAt: item.doneAt || null })
         .catch(function () { showMessage('Could not restore — try again'); });
     } else {
       items.unshift({ id: genId(), text: item.text, done: item.done, createdAt: item.createdAt || Date.now(), doneAt: item.doneAt || null });
@@ -653,30 +668,41 @@
   renderLoading();
 
   (function init() {
-    var claudeApi = window.claude;
-    var useFn = claudeApi && claudeApi.use ? claudeApi.use.bind(claudeApi) : null;
-    if (!useFn) {
+    var app, auth;
+    try {
+      app = initializeApp(firebaseConfig);
+      auth = getAuth(app);
+      firebaseDb = getDatabase(app);
+    } catch (e) {
       mode = 'local';
       items = localLoad();
       loaded = true;
       render();
       return;
     }
-    useFn('db').then(function (dbNs) {
-      if (!dbNs) {
+
+    var startedFirebase = false;
+    var fallbackTimer = setTimeout(function () {
+      if (!startedFirebase) {
         mode = 'local';
         items = localLoad();
         loaded = true;
         render();
-        return;
       }
-      mode = 'db';
-      dbCol = dbNs.collection('wishes');
-      dbCol.onSnapshot(function (snap) {
-        items = snap.docs.map(function (d) {
-          var data = d.data() || {};
+    }, 8000);
+
+    onAuthStateChanged(auth, function (user) {
+      if (!user || startedFirebase) return;
+      startedFirebase = true;
+      clearTimeout(fallbackTimer);
+      mode = 'firebase';
+      wishesRef = ref(firebaseDb, 'wishes');
+      onValue(wishesRef, function (snapshot) {
+        var val = snapshot.val() || {};
+        items = Object.keys(val).map(function (id) {
+          var data = val[id] || {};
           return {
-            id: d.id,
+            id: id,
             text: typeof data.text === 'string' ? data.text : '',
             done: !!data.done,
             createdAt: typeof data.createdAt === 'number' ? data.createdAt : 0,
@@ -691,11 +717,16 @@
         loaded = true;
         render();
       });
-    }).catch(function () {
-      mode = 'local';
-      items = localLoad();
-      loaded = true;
-      render();
+    });
+
+    signInAnonymously(auth).catch(function () {
+      if (!startedFirebase) {
+        clearTimeout(fallbackTimer);
+        mode = 'local';
+        items = localLoad();
+        loaded = true;
+        render();
+      }
     });
   })();
 })();

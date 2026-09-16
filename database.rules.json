@@ -1,0 +1,11 @@
+{
+  "rules": {
+    "wishes": {
+      ".read": "auth != null",
+      ".write": "auth != null",
+      "$wishId": {
+        ".validate": "newData.hasChildren(['text', 'done', 'createdAt']) && newData.child('text').isString() && newData.child('text').val().length > 0 && newData.child('text').val().length <= 200 && newData.child('done').isBoolean() && newData.child('createdAt').isNumber()"
+      }
+    }
+  }
+}
