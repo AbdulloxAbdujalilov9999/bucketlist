@@ -264,8 +264,6 @@
   }
   .row.is-done .row-text {
     color: var(--text-muted);
-    text-decoration: line-through;
-    text-decoration-color: var(--text-muted);
   }
 
   .delete-btn {
@@ -618,9 +616,9 @@ import { getDatabase, ref, onValue, push, update, remove } from "https://www.gst
     if (filtered.length === 0) { renderEmptySearch(search.trim()); return; }
 
     var active = filtered.filter(function (w) { return !w.done; })
-      .slice().sort(function (a, b) { return (b.createdAt || 0) - (a.createdAt || 0); });
+      .slice().sort(function (a, b) { return a.text.localeCompare(b.text); });
     var done = filtered.filter(function (w) { return w.done; })
-      .slice().sort(function (a, b) { return (b.doneAt || 0) - (a.doneAt || 0); });
+      .slice().sort(function (a, b) { return a.text.localeCompare(b.text); });
 
     els.listWrap.innerHTML = '';
     if (active.length) els.listWrap.appendChild(buildSection('Wishes', active));
