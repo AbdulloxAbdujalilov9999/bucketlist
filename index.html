@@ -209,13 +209,18 @@
 
   .row {
     display: flex;
-    align-items: center;
-    gap: 4px;
+    flex-direction: column;
     border-bottom: 1px solid var(--border);
     padding: 0 8px 0 12px;
   }
   .row:last-child { border-bottom: none; }
   .row.is-done { background: var(--surface-2); }
+
+  .row-top {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+  }
 
   .row-main {
     all: unset;
@@ -232,6 +237,14 @@
     text-align: left;
   }
   .row-main:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; border-radius: 10px; }
+
+  .row-body {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    flex: 1;
+    min-width: 0;
+  }
 
   .check {
     width: 24px;
@@ -256,7 +269,6 @@
   .check.is-done svg { opacity: 1; transform: scale(1); }
 
   .row-text {
-    flex: 1;
     min-width: 0;
     color: var(--text);
     line-height: 1.4;
@@ -265,6 +277,43 @@
   .row.is-done .row-text {
     color: var(--text-muted);
   }
+
+  .row-caption {
+    font-size: 0.8125rem;
+    color: var(--text-muted);
+    overflow-wrap: anywhere;
+  }
+
+  .note-btn {
+    width: 32px;
+    height: 32px;
+    border-radius: 50%;
+    border: none;
+    background: transparent;
+    color: var(--text-muted);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    cursor: pointer;
+  }
+  .note-btn svg { width: 15px; height: 15px; }
+  .note-btn:hover { background: var(--surface-2); color: var(--accent); }
+  .note-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+  .note-editor { padding: 0 4px 12px 40px; }
+  .note-input {
+    width: 100%;
+    height: 36px;
+    border-radius: 10px;
+    border: 1px solid var(--border);
+    background: var(--surface);
+    color: var(--text);
+    font-size: 0.875rem;
+    padding: 0 12px;
+  }
+  .note-input::placeholder { color: var(--text-muted); }
+  .note-input:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 
   .delete-btn {
     width: 36px;
@@ -392,6 +441,14 @@ import { getDatabase, ref, onValue, push, update, remove } from "https://www.gst
   var CHECK_SVG = '<svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/></svg>';
   var DELETE_SVG = '<svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg>';
   var EMPTY_SVG = '<svg viewBox="0 0 64 64" fill="none" width="56" height="56" aria-hidden="true"><circle cx="32" cy="32" r="26" stroke="currentColor" stroke-width="2" stroke-dasharray="3 7" stroke-linecap="round"/><path d="M32 21v22M21 32h22" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"/></svg>';
+  var NOTE_SVG = '<svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M4 20h4L18 10a2.5 2.5 0 00-4-4L4 16v4z" stroke="currentColor" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/><path d="M13 7l4 4" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>';
+
+  function formatDate(ts) {
+    if (!ts) return '';
+    try {
+      return new Date(ts).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
+    } catch (e) { return ''; }
+  }
 
   var LOCAL_KEY = 'life-list.wishes.v1';
 
@@ -408,6 +465,7 @@ import { getDatabase, ref, onValue, push, update, remove } from "https://www.gst
   var items = [];
   var loaded = false;
   var editMode = false;
+  var editingNoteId = null;
   var search = '';
   var mode = null;
   var firebaseDb = null;
@@ -487,6 +545,18 @@ import { getDatabase, ref, onValue, push, update, remove } from "https://www.gst
     }
   }
 
+  function saveNote(item, rawText) {
+    var note = rawText.trim();
+    if (mode === 'firebase') {
+      update(ref(firebaseDb, 'wishes/' + item.id), { note: note || null })
+        .catch(function () { showMessage('Could not save note — try again'); });
+    } else {
+      item.note = note || null;
+      localSave();
+      render();
+    }
+  }
+
   function deleteWish(item) {
     if (mode === 'firebase') {
       remove(ref(firebaseDb, 'wishes/' + item.id))
@@ -502,10 +572,10 @@ import { getDatabase, ref, onValue, push, update, remove } from "https://www.gst
 
   function restoreWish(item) {
     if (mode === 'firebase') {
-      push(wishesRef, { text: item.text, done: item.done, createdAt: item.createdAt || Date.now(), doneAt: item.doneAt || null })
+      push(wishesRef, { text: item.text, done: item.done, createdAt: item.createdAt || Date.now(), doneAt: item.doneAt || null, note: item.note || null })
         .catch(function () { showMessage('Could not restore — try again'); });
     } else {
-      items.unshift({ id: genId(), text: item.text, done: item.done, createdAt: item.createdAt || Date.now(), doneAt: item.doneAt || null });
+      items.unshift({ id: genId(), text: item.text, done: item.done, createdAt: item.createdAt || Date.now(), doneAt: item.doneAt || null, note: item.note || null });
       localSave();
       render();
     }
@@ -515,6 +585,9 @@ import { getDatabase, ref, onValue, push, update, remove } from "https://www.gst
     var row = document.createElement('div');
     row.className = 'row' + (item.done ? ' is-done' : '');
     row.dataset.id = item.id;
+
+    var top = document.createElement('div');
+    top.className = 'row-top';
 
     var main = document.createElement('button');
     main.type = 'button';
@@ -527,11 +600,28 @@ import { getDatabase, ref, onValue, push, update, remove } from "https://www.gst
     check.className = 'check' + (item.done ? ' is-done' : '');
     check.innerHTML = CHECK_SVG;
 
-    var text = el('span', 'row-text', item.text);
+    var body = el('span', 'row-body');
+    body.appendChild(el('span', 'row-text', item.text));
+
+    if (item.done) {
+      var caption = formatDate(item.doneAt);
+      if (item.note) caption = caption ? (caption + ' · ' + item.note) : item.note;
+      if (caption) body.appendChild(el('span', 'row-caption', caption));
+    }
 
     main.appendChild(check);
-    main.appendChild(text);
-    row.appendChild(main);
+    main.appendChild(body);
+    top.appendChild(main);
+
+    if (item.done) {
+      var noteBtn = document.createElement('button');
+      noteBtn.type = 'button';
+      noteBtn.className = 'note-btn';
+      noteBtn.dataset.action = 'note';
+      noteBtn.setAttribute('aria-label', (item.note ? 'Edit note: ' : 'Add note: ') + item.text);
+      noteBtn.innerHTML = NOTE_SVG;
+      top.appendChild(noteBtn);
+    }
 
     if (editMode) {
       var del = document.createElement('button');
@@ -540,7 +630,41 @@ import { getDatabase, ref, onValue, push, update, remove } from "https://www.gst
       del.dataset.action = 'delete';
       del.setAttribute('aria-label', 'Delete: ' + item.text);
       del.innerHTML = DELETE_SVG;
-      row.appendChild(del);
+      top.appendChild(del);
+    }
+
+    row.appendChild(top);
+
+    if (editingNoteId === item.id) {
+      var editor = document.createElement('div');
+      editor.className = 'note-editor';
+      var input = document.createElement('input');
+      input.type = 'text';
+      input.className = 'note-input';
+      input.placeholder = 'Add a note…';
+      input.maxLength = 200;
+      input.value = item.note || '';
+      input.setAttribute('aria-label', 'Note for: ' + item.text);
+      input.addEventListener('keydown', function (e) {
+        if (e.key === 'Enter' && !e.isComposing) {
+          e.preventDefault();
+          editingNoteId = null;
+          saveNote(item, input.value);
+        } else if (e.key === 'Escape') {
+          e.preventDefault();
+          editingNoteId = null;
+          render();
+        }
+      });
+      input.addEventListener('blur', function () {
+        if (editingNoteId === item.id) {
+          editingNoteId = null;
+          saveNote(item, input.value);
+        }
+      });
+      editor.appendChild(input);
+      row.appendChild(editor);
+      setTimeout(function () { input.focus(); }, 0);
     }
 
     return row;
@@ -634,6 +758,10 @@ import { getDatabase, ref, onValue, push, update, remove } from "https://www.gst
     if (!item) return;
     if (btn.dataset.action === 'toggle') toggleDone(item);
     else if (btn.dataset.action === 'delete') deleteWish(item);
+    else if (btn.dataset.action === 'note') {
+      editingNoteId = item.id;
+      render();
+    }
   });
 
   els.editBtn.addEventListener('click', function () {
@@ -704,7 +832,8 @@ import { getDatabase, ref, onValue, push, update, remove } from "https://www.gst
             text: typeof data.text === 'string' ? data.text : '',
             done: !!data.done,
             createdAt: typeof data.createdAt === 'number' ? data.createdAt : 0,
-            doneAt: typeof data.doneAt === 'number' ? data.doneAt : null
+            doneAt: typeof data.doneAt === 'number' ? data.doneAt : null,
+            note: typeof data.note === 'string' ? data.note : null
           };
         });
         loaded = true;
