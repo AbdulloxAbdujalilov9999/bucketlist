@@ -17,6 +17,23 @@
           "$wishId": {
             ".validate": "newData.hasChildren(['text', 'done', 'createdAt']) && newData.child('text').isString() && newData.child('text').val().length > 0 && newData.child('text').val().length <= 200 && newData.child('done').isBoolean() && newData.child('createdAt').isNumber()"
           }
+        },
+        "notes": {
+          "$noteId": {
+            ".validate": "newData.hasChildren(['text', 'senderUid', 'createdAt']) && newData.child('text').isString() && newData.child('text').val().length > 0 && newData.child('text').val().length <= 2000 && newData.child('senderUid').isString() && newData.child('createdAt').isNumber()",
+            "senderUid": {
+              ".validate": "newData.val() === auth.uid"
+            },
+            "senderName": {
+              ".validate": "newData.isString() && newData.val().length <= 80"
+            },
+            "readBy": {
+              "$uid": {
+                ".write": "auth != null && auth.uid === $uid",
+                ".validate": "newData.isNumber()"
+              }
+            }
+          }
         }
       }
     },
